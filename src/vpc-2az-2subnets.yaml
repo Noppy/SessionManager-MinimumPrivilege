@@ -1,0 +1,402 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a VPC with ２ subnet configurations in 2AZ
+#----------------------------------------------
+Parameters:
+  #------------------
+  InternetAccess:
+    Description: (required)If this vpc is required internet access, InternetAccess is true.
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Must specify true or false.
+  #------------------
+  VpcInternalDnsNameEnable:
+    Description: (required)If set private hosted zone, VpcInternalDnsNameEnable is true.
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  VpcInternalDnsName: 
+    Description: Route53 Private Hosted zone
+    Type: String
+    AllowedPattern: "^([a-z0-9]+(-[a-z0-9]+)*\\.?)+\\.$"
+    Default: "local."
+    ConstraintDescription: You can use letters (abc), numbers (123) and dashes/hyphens.
+  VpcName:
+    Description: Name for the VPC
+    Type: String
+    AllowedPattern: "[a-zA-Z0-9=-_].*"
+    Default: MainVPC
+    ConstraintDescription: Can contain only ASCII characters.
+  VpcCidr:
+    Description: CIDR Block for the  VPC
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.1.0.0/16
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be like 10.1.0.0/16
+  DnsSupport:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  DnsHostnames:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  #---
+  DhcpOptionsDomainNameServers1:
+    Description: "The IPv4 addresses of a 1st domain name servers, or AmazonProvidedDNS"
+    Type: String
+    Default: "AmazonProvidedDNS"
+  DhcpOptionsDomainNameServers2:
+    Description: "The IPv4 addresses of a 2nd domain name servers, or Blank"
+    Type: String
+    Default: ""
+  DhcpOptionsNtpServers1:
+    Description: "The IPv4 addresses of a 1st Network Time Protocol (NTP) servers."
+    Type: String
+    Default: 169.254.169.123
+  DhcpOptionsNtpServers2:
+    Description: "The IPv4 addresses of a 2nd Network Time Protocol (NTP) servers or blank."
+    Type: String
+    Default: ""
+  #---
+  Subnet1Name:
+    Description: Name for the Subnet 1
+    Type: String
+    Default: Sub1
+    AllowedPattern: "[a-zA-Z0-9=-_].*"
+    ConstraintDescription: Can contain only ASCII characters.
+  Subnet1Cidr:
+    Description: CIDR Block for the subnet 1
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.1.0.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be like 10.1.1.0/24
+  #---
+  Subnet2Name:
+    Description: Name for the Subnet 2
+    Type: String
+    Default: Sub2
+    AllowedPattern: "[a-zA-Z0-9=-_].*"
+    ConstraintDescription: Can contain only ASCII characters.
+  Subnet2Cidr:
+    Description: CIDR Block for the subnet 2
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.1.16.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be like 10.1.1.0/24
+  #---
+  EnvironmentName:
+    Description: If you do not give an environment name, do not enter anything.
+    Type: String
+    Default: ""
+  #------------------
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      -
+        Label:
+          default: "Environment"
+        Parameters:
+          - EnvironmentName
+      -
+        Label:
+          default: "VPC Configurations"
+        Parameters:
+          - InternetAccess
+          - VpcName
+          - VpcCidr
+          - DnsSupport
+          - DnsHostnames
+      -
+        Label:
+          default: "VPC DHCP Options Configurations"
+        Parameters:
+          - DhcpOptionsDomainNameServers1
+          - DhcpOptionsDomainNameServers2
+          - DhcpOptionsNtpServers1
+          - DhcpOptionsNtpServers2
+      -
+        Label:
+          default: "Subnets Configurations"
+        Parameters:
+          - Subnet1Name
+          - Subnet1Cidr
+          - Subnet2Name
+          - Subnet2Cidr
+      -
+        Label:
+          default: "Private Hosted zone"
+        Parameters:
+          - VpcInternalDnsNameEnable
+          - VpcInternalDnsName
+#----------------------------------------------
+Conditions: 
+  CheckInternetAccess: !Equals [ !Ref InternetAccess, true ]
+  CheckVpcInternalDnsNameEnable: !Equals [ !Ref VpcInternalDnsNameEnable, true ]
+  CheckEnvironment: !Not [ !Equals [ !Ref EnvironmentName, "" ] ]
+#----------------------------------------------
+Resources:
+  #------------------ VPC FlowLog Role
+  FlowlogRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - vpc-flow-logs.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: "Flowlog"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action: 
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:DescribeLogGroups"
+                  - "logs:DescribeLogStreams"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+  #------------------ VPC
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: !Ref DnsSupport
+      EnableDnsHostnames: !Ref DnsHostnames
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}
+              - !Sub ${VpcName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  #------------------ DHCP Options
+  DhcpOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainNameServers:
+        - !Ref DhcpOptionsDomainNameServers1
+        - !Ref DhcpOptionsDomainNameServers2
+      NtpServers: 
+        - !Ref DhcpOptionsNtpServers1
+        - !Ref DhcpOptionsNtpServers2
+      Tags: 
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}-DhcpOptions
+              - !Sub ${VpcName}-DhcpOptions
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  AssociationDhcpOptionsToVpc:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      DhcpOptionsId: !Ref DhcpOptions
+      VpcId: !Ref Vpc
+  #------------------ Internet GW
+  Igw:
+    Type: AWS::EC2::InternetGateway
+    Condition: CheckInternetAccess
+    Properties:
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}-IGW
+              - !Sub ${VpcName}-IGW
+  AttachIgw:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CheckInternetAccess
+    Properties:
+      InternetGatewayId: !Ref Igw
+      VpcId: !Ref Vpc
+    DependsOn:
+      - Vpc
+      - Igw
+  #------------------ Subnet
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref Subnet1Cidr
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select
+      - 0
+      - Fn::GetAZs: !Ref 'AWS::Region'
+      MapPublicIpOnLaunch:
+        Fn::If:
+          - CheckInternetAccess
+          - true
+          - false
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}-${Subnet1Name}
+              - !Sub ${VpcName}-${Subnet1Name}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref Subnet2Cidr
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select
+      - 1
+      - Fn::GetAZs: !Ref 'AWS::Region'
+      MapPublicIpOnLaunch:
+        Fn::If:
+          - CheckInternetAccess
+          - true
+          - false
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}-${Subnet2Name}
+              - !Sub ${VpcName}-${Subnet2Name}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  #------------------ Route Table
+  #----------  VPC  Route Table
+  SubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - CheckEnvironment
+              - !Sub ${EnvironmentName}-${VpcName}-PubSubRouteTable
+              - !Sub ${VpcName}-PubSubRouteTable
+        - Key: Environment
+          Value: !Ref EnvironmentName
+  VpcInternetRote:
+    Type: AWS::EC2::Route
+    Condition: CheckInternetAccess
+    Properties:
+      RouteTableId: !Ref SubnetRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+    DependsOn:
+      - AttachIgw
+  #---- Attache to subnets in the  VPC
+  SubnetRouteTableAssociationSubnet1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref SubnetRouteTable
+  SubnetRouteTableAssociationSubnet2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref SubnetRouteTable
+  #------------------ Local Domain Name
+  VpcInternalDns:
+    Type: AWS::Route53::HostedZone
+    Condition: CheckVpcInternalDnsNameEnable
+    Properties:
+      HostedZoneConfig:
+        Comment: "Resource DNS for  VPC"
+      Name: !Ref VpcInternalDnsName
+      VPCs:
+        - VPCId: !Ref Vpc
+          VPCRegion: !Ref AWS::Region
+  #------------------ Cloudwatch log for Flowlog
+  VPCFlowlog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowlogRole.Arn
+      LogGroupName: !Sub VPCFlowLogs/${VpcName}
+      ResourceId: !Ref Vpc
+      ResourceType: VPC
+      TrafficType: ALL
+Outputs:
+  #------------------ VPC
+  VpcId:
+    Description: VPC ID
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcId"
+  VpcCidr:
+    Description:  VPC CIDR
+    Value: !Ref VpcCidr
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcCidr"
+  #------------------ Subnet ID
+  Subnet1Id:
+    Description: Subnet1 ID in the VPC
+    Value: !Ref Subnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-Subnet1Id"
+  Subnet2Id:
+    Description: Subnet2 ID in the VPC
+    Value: !Ref Subnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-Subnet2Id"
+  #------------------ Subnet CIDR
+  Subnet1Cidr:
+    Description: CIDR of Subnet1 in the VPC
+    Value: !Ref Subnet1Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-Subnet1Cidr"
+  Subnet2Cidr:
+    Description: CIDR of Subnet2 in the VPC
+    Value: !Ref Subnet2Cidr
+    Export:
+      Name: !Sub "${AWS::StackName}-Subnet2Cidr"
+  #------------------ route tables
+  SubnetRouteTableId:
+    Description: Route table for  Subnet
+    Value: !Ref SubnetRouteTable
+    Export:
+      Name: !Sub "${AWS::StackName}-SubnetRouteTableId"
+  #------------------ Resource DNS name
+  VpcInternalDnsName:
+    Description: Resource DNS zone name in the  Vpc
+    Condition: CheckVpcInternalDnsNameEnable
+    Value: !Ref VpcInternalDnsName
+    Export:
+      Name: !Sub ${AWS::StackName}-VpcInternalDnsName
+  VpcInternalDnsId:
+    Description: Resource DNS zone id in the  VPC
+    Condition: CheckVpcInternalDnsNameEnable
+    Value: !Ref VpcInternalDns
+    Export:
+      Name: !Sub ${AWS::StackName}-VpcInternalDnsId
+  #------------------ Default setting
+  DefaultSecurityGroupId:
+    Description: Default Security Group Id
+    Value: !GetAtt Vpc.DefaultSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-DefaultSecurityGroupId
+      
+      

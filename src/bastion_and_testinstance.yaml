@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy Client Instances
+#----------------------------------------------
+Parameters:
+  #------------------
+  InstanceType:
+    Description: (Optional) Instance type
+    Type: String
+    Default: t2.micro
+  AmiId:
+    Description: (Required) AMI ID
+    Type: String
+  KeyName:
+    Description: (Required) Key Pair Name
+    Type: String
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      -
+        Label:
+          default:  Instances
+        Parameters:
+          - InstanceType
+          - AmiId
+          - KeyName
+#----------------------------------------------
+Resources:
+  #------------------ IAM Role:
+  Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles: 
+        - !Ref Role
+  SG:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: "Allow SSH for bation"
+      VpcId:
+        Fn::ImportValue: SSMTestVPC-VpcId
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+      Tags: 
+        - Key: "Name"
+          Value: "SSMTestVPC-InstancesSG"
+  #------------------ Instance:
+  Bastion:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Profile
+      KeyName: !Ref KeyName
+      Monitoring: yes
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          SubnetId:
+            Fn::ImportValue: SSMTestVPC-PublicSubnet1Id
+          GroupSet:
+            - !Ref SG
+          AssociatePublicIpAddress: true
+      Tags:
+        - Key: Name
+          Value: SSMTestVPC-Bastion
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          # Update ALL rpms, and change hostname to Userfrendly name 
+          yum -y update
+          hostnamectl set-hostname "SSMTestVPC-Bastion"
+  SsmInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Profile
+      KeyName: !Ref KeyName
+      Monitoring: yes
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          SubnetId:
+            Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+          GroupSet:
+            - !Ref SG
+          AssociatePublicIpAddress: true
+      Tags:
+        - Key: Name
+          Value: SSMTestVPC-Ssm
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          # Update ALL rpms, and change hostname to Userfrendly name 
+          yum -y update
+          hostnamectl set-hostname "SSMTestVPC-Ssm"
+Outputs:
+  #---------------- EC2 Instance
+  SGId:
+    Description: SecurityGroup ID for Client
+    Value: !Ref SG
+    Export:
+      Name: !Sub ${AWS::StackName}-SGId
+  BastionPublicIp:
+    Description: Public IP address of Client
+    Value: !GetAtt Bastion.PublicIp
+    Export:
+      Name: !Sub ${AWS::StackName}-BastionPublicIp
+  SsmPublicIp:
+    Description: Public IP address of Client
+    Value: !GetAtt SsmInstance.PublicIp
+    Export:
+      Name: !Sub ${AWS::StackName}-SsmPublicIp
+
+
+      
