@@ -38,6 +38,7 @@ aws --profile ${PROFILE} --region ${REGION} \
         --stack-name SSMTestS3Logs \
         --template-body "file://./src/s3_logs_kms_for_ssm.yaml"
 ```
+#### (ii) Session Manager設定
 セッションマネージャの設定をします。この設定はCloudFormation未対応なためCLIで実施します。
 ```shell
 #S3バケット名とロググループ名の取得
@@ -237,6 +238,98 @@ aws --profile ${PROFILE} --region ${REGION} \
     - ログ出力なし: `OK`
     - ログ出力(logs): `OK`
     - ログ出力(s3): `OK`
+
+### (4)-(e) VPCEがssm/ec2message/ssmmessage/logs/s3 + SSMセッションのKMS暗号化
+#### (i)SSMセッションのKMS暗号化の有効化
+- CloudFormation操作用の端末で以下を実行し設定を変更
+```shell
+#S3バケット名とロググループ名の取得
+BucketName=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name SSMTestS3Logs \
+        --query 'Stacks[].Outputs[?OutputKey==`BucketName`].[OutputValue]')
+LogGroup=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name SSMTestS3Logs \
+        --query 'Stacks[].Outputs[?OutputKey==`LogGroupId`].[OutputValue]')
+KmsKeyId=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name SSMTestS3Logs \
+        --query 'Stacks[].Outputs[?OutputKey==`KeyId`].[OutputValue]')
+echo "
+BucketName = ${BucketName}
+LogGroup   = ${LogGroup}
+KmsKeyId   = ${KmsKeyId}
+"
+
+#定義情報の設定
+SessionManagerRunShellJson='{
+  "schemaVersion": "1.0",
+  "description": "Document to hold regional settings for Session Manager",
+  "sessionType": "Standard_Stream",
+  "inputs": {
+    "s3BucketName": "'"${BucketName}"'",
+    "s3KeyPrefix": "",
+    "s3EncryptionEnabled": true,
+    "cloudWatchLogGroupName": "'"${LogGroup}"'",
+    "cloudWatchEncryptionEnabled": true,
+    "idleSessionTimeout": "60",
+    "maxSessionDuration": "",
+    "cloudWatchStreamingEnabled": true,
+    "kmsKeyId": "'"${KmsKeyId}"'",
+    "runAsEnabled": false,
+    "runAsDefaultUser": "",
+    "shellProfile": {
+      "windows": "",
+      "linux": ""
+    }
+  }
+}'
+
+#設定の適用
+aws --profile ${PROFILE} --region ${REGION} \
+  ssm update-document \
+    --name "SSM-SessionManagerRunShell" \
+    --content "${SessionManagerRunShellJson}" \
+    --document-version "\$LATEST"
+
+```
+
+#### (ii)VPCE KMSがない状態でSSM接続を確認
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `OK`
+  - 情報収集: `NG`
+  - Session Manager
+    - ログ出力(logs): `NG`
+    - ログ出力(s3): `NG`
+
+
+#### (iii)VPCE KMS追加
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-ssm_ec2mes_ssmmes_logs_s3_kms.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `OK`
+  - 情報収集: `OK`
+  - Session Manager
+    - ログ出力(logs): `OK`
+    - ログ出力(s3): `OK`
+
+#### (iii)Session ManagerとVPCEの設定戻し
+- Session Manager設定: `(2)-(a)の(ii)`でKMS暗号設定を無効化する
+- VPCエンドポイント: 下記コマンドでkmsのVPCEを解除
+```shell
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-allowall.yaml"
+```
 
 
 ## (5)セキュリティリスクシナリオの確認
