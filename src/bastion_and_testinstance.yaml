@@ -99,7 +99,7 @@ Resources:
             Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
           GroupSet:
             - !Ref SG
-          AssociatePublicIpAddress: true
+          AssociatePublicIpAddress: false
       Tags:
         - Key: Name
           Value: SSMTestVPC-Ssm
@@ -121,11 +121,11 @@ Outputs:
     Value: !GetAtt Bastion.PublicIp
     Export:
       Name: !Sub ${AWS::StackName}-BastionPublicIp
-  SsmPublicIp:
+  SsmPrivateIp:
     Description: Public IP address of Client
-    Value: !GetAtt SsmInstance.PublicIp
+    Value: !GetAtt SsmInstance.PrivateIp
     Export:
-      Name: !Sub ${AWS::StackName}-SsmPublicIp
+      Name: !Sub ${AWS::StackName}-SsmPrivateIp
 
 
       

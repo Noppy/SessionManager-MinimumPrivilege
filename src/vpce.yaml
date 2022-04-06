@@ -30,40 +30,61 @@ Resources:
         - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
       SecurityGroupIds: 
         - !Ref VpceSG
-#      PolicyDocument:
-#        Id: SsmPolicy
-#        Version: "2012-10-17"
-#        Statement:
-##          -
-#            Sid: Stmt1649201062158
-#            Effect: Allow
-#            Principal": "*"
-#            Action: "ssm:*"
-#            Resource": "*"
-
-
-#  Ec2MessagesEndpoint:
-#    Type: AWS::EC2::VPCEndpoint
-#    Properties:
-#      VpcId: 
-#        Fn::ImportValue: SSMTestVPC-VpcId
-#      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
-#      VpcEndpointType: Interface
-#      PrivateDnsEnabled: true
-#      SubnetIds:
-#        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
-#        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
-#      SecurityGroupIds: 
-#        - !Ref VpceSG
-#      PolicyDocument:
-#        Id: SsmPolicy
-#        Version: "2012-10-17"
-#        Statement:
-#          -
-#            Sid: Stmt1649201062158
-#            Effect: Allow
-#            Principal": "*"
-#            Action: "ec2messages:*"
-#            Resource": "*"
-
-
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal: "*"
+            NotAction: "ssm:UpdateInstanceInformation"
+            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:*"
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
+            Action: "ssm:UpdateInstanceInformation"
+            Resource: "*"
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
+            Action: "ssmmessages:*"
+            Resource: "*"
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
+            Action: "ec2messages:*"
+            Resource: "*"

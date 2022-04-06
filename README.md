@@ -28,7 +28,7 @@ aws --profile ${PROFILE} sts get-caller-identity
 
 ```
 
-## (2)Network準備
+## (2)環境の準備
 ### (2)-(a) VPC作成
 ```shell
 # ComputeVPC
@@ -47,7 +47,7 @@ aws --profile ${PROFILE} --region ${REGION} \
         --template-body "file://./src/vpce.yaml"
 ```
 
-## (3)インスタンス￥準備
+### (2)-(c) インスタンス作成
 ```shell
 KEYNAME="CHANGE_KEY_PAIR_NAME"  #環境に合わせてキーペア名を設定してください。
 ```
@@ -80,3 +80,27 @@ aws --profile ${PROFILE} --region ${REGION} \
         --parameters "${CFN_STACK_PARAMETERS}" \
         --capabilities CAPABILITY_IAM ;
 ```
+## (3)ログイン
+```shell
+#BastionとSSMインスタンスのIPを確認する
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation describe-stacks \
+        --stack-name SSMTestInstances  \
+        --query 'Stacks[].Outputs'
+
+#SSHでBastionに接続
+ssh-add
+ssh -A ec2-user@<上記で確認したBastionのPublic IPアドレス>
+```
+```shell
+#Bastionサーバ
+ssh <上記で確認したSsmのPrivate IPアドレス>
+
+# Setup AWS CLI
+REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed -e 's/.$//')
+aws configure set region ${REGION}
+aws configure set output json
+```
+
+
+# 必要なVPCE
