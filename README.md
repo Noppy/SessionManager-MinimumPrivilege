@@ -139,7 +139,9 @@ aws --profile ${PROFILE} --region ${REGION} \
         --parameters "${CFN_STACK_PARAMETERS}" \
         --capabilities CAPABILITY_IAM ;
 ```
-## (3)SSHログイン
+## (3)SSM疎通確認
+### (3)-(a) SSH接続
+SSM Agentのモニタリングのため予めSSHでログインしておきます。
 - 作業端末からBastionにSSH接続する
 ```shell
 #BastionとSSMインスタンスのIPを確認する
@@ -162,15 +164,15 @@ REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-
 aws configure set region ${REGION}
 aws configure set output json
 ```
-## (4) SSMのVPCE経由の疎通確認
+### (3)-(b) SSMのVPCE経由の疎通確認
 Session Managerで接続できることを確認する。
 - 作業端末のブラウザなどからマネコンで、SsmTestに対してSession Manager接続する
 - SSM AgentのモニタリングはSSHした端末で確認。確認は下記ログで行う(要root権限)
   - `/var/log/amazon/ssm/amazon-ssm-agent.log`
   - `/var/log/amazon/ssm/errors.log`
 
-## VPCE挙動の確認
-### (1)-(a) ssmだけ
+## (4)VPCE挙動の確認
+### (4)-(a) VPCEがssmだけ
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -183,10 +185,10 @@ aws --profile ${PROFILE} --region ${REGION} \
   - Run Command: `NG`
   - 情報収集: `NG`
   - Session Manager
-    - 接続: `NG`
+    - ログ出力なし: `NG`
     - ログ出力(logs): `NG`
     - ログ出力(s3): `NG`
-### (1)-(b) ssm/ec2messageだけ
+### (4)-(b) VPCEがssm/ec2messageだけ
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -196,32 +198,57 @@ aws --profile ${PROFILE} --region ${REGION} \
 ```
 - 挙動
   - Fleet Manager: `Online`
-  - Run Command: `NG`
+  - Run Command: `OK`
   - 情報収集: `NG`
   - Session Manager
-    - 接続: `NG`
+    - ログ出力なし: `NG`
+    - ログ出力(logs): `NG`
+    - ログ出力(s3): `NG`
+### (4)-(c) VPCEがssm/ec2message/ssmmessage
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-ssm_ec2message_ssmmessage.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `OK`
+  - 情報収集: `NG`
+  - Session Manager
+    - ログ出力なし: `OK`
     - ログ出力(logs): `NG`
     - ログ出力(s3): `NG`
 
+### (4)-(d) VPCEがssm/ec2message/ssmmessage/logs/s3
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-allowall.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `OK`
+  - 情報収集: `OK` -> S3バケットが必要
+  - Session Manager
+    - ログ出力なし: `OK`
+    - ログ出力(logs): `OK`
+    - ログ出力(s3): `OK`
 
 
-
-    
-
-
-
-
-
-## セキュリティリスクシナリオの確認
+## (5)セキュリティリスクシナリオの確認
 Systems Managerのハイブリットアクティベーション機能を利用し、不正なAWSアカウントのSSMにVPCエンドポイント経由でSSM接続し、セッションマネージャで不正アクセスするシナリオを再現します。
-### (1) 不正アカウントでSystems Managerのハイブリットアクティベーション作成
+### (5)-(a) 不正アカウントでSystems Managerのハイブリットアクティベーション作成
 手元の作業PCで以下の手順で、不正なAWSアカウントにハイブリットアクティベーションを作成します。
-#### (1)-(a)事前準備
+#### (5)-(a)-(i)事前準備
 ```shell
 UNAUTH_PROFILE="<不正アカウントのAdmin権限のあるプロファイルを指定>"
 UNAUTH_REGION="${REGION}"
 ```
-#### (1)-(b)ハイブリットアクティベーション用のIAMロール作成
+#### (5)-(a)-(ii)ハイブリットアクティベーション用のIAMロール作成
 ```shell
 #必要情報の取得
 AccountID=$(aws --profile ${OTHER_PROFILE} --output text sts get-caller-identity --query 'Account')
@@ -268,7 +295,7 @@ aws --profile ${UNAUTH_PROFILE} \
         --policy-arn arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess
 
 ```
-### (2)ハイブリットアクティベーション作成
+### (5)-(b)ハイブリットアクティベーション作成
 ハイブリットアクティベーションを作成し、作成されたアクティベーションのIDとCODEを控えておきます。
 ```shell
 aws --profile ${UNAUTH_PROFILE} --region ${UNAUTH_REGION} \
@@ -282,7 +309,7 @@ aws --profile ${UNAUTH_PROFILE} --region ${UNAUTH_REGION} \
 #    "ActivationCode": "xxxxx"
 # }
 ```
-### (3)インスタンスの追加
+### (5)-(c)インスタンスの追加
 SsmTestインスタンスのOSにログインし、上記のアクティベーション情報を利用して不正アカウントのSSMにSsmTestインスタンスを登録しいます。
 ```shell
 #以下のコマンドは、SSMTestインスタンスにログインした状態で実行する。
@@ -302,13 +329,13 @@ sudo amazon-ssm-agent -register -code "${CODE}" -id "${ID}" -region "${REGION}"
 #SSMエージェント起動
 sudo systemctl start amazon-ssm-agent
 ```
-### (4)不正アカウントでの確認ンスタンスの追加
+### (5)-(d)不正アカウントでの確認ンスタンスの追加
 不正アカウントのマネージメントコンソールで以下ができることを確認する。
 - Systems Managerのフリーとマネージャーに該当インスタンスが存在すること
 - セッションマネージャで該当インスタンスにアクセス可能であること
 
-## VPCEポリシーでの防御確認
-### (1)VPCエンドポイントポリシーの更新
+## (6)VPCEポリシーでの防御確認
+### (6)-(a)VPCエンドポイントポリシーの更新
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -316,7 +343,7 @@ aws --profile ${PROFILE} --region ${REGION} \
         --stack-name SSMTestVpce \
         --template-body "file://./src/vpce-restrict.yaml"
 ```
-### (2)不正アカウントでアクティベーションできるか
+### (6)-(b)不正アカウントでアクティベーションできるか
 - 不正アカウントのSSMで登録済みのインスタンスを登録解除する
 - SsmTestにSSHログインした状態でアクティベーション登録を行う
 - ```shell
