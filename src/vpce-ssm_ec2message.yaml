@@ -37,26 +37,6 @@ Resources:
             Principal: "*"
             Action: "ssm:*"
             Resource: "*"
-  SsmMessagesEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: 
-        Fn::ImportValue: SSMTestVPC-VpcId
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
-      SecurityGroupIds: 
-        - !Ref VpceSG
-      PolicyDocument:
-        Statement:
-          - 
-            Effect: Allow
-            Principal: "*"
-            Action: "ssmmessages:*"
-            Resource: "*"
   Ec2MessagesEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -76,41 +56,4 @@ Resources:
             Effect: Allow
             Principal: "*"
             Action: "ec2messages:*"
-            Resource: "*"
-  Logs:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: 
-        Fn::ImportValue: SSMTestVPC-VpcId
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
-      SecurityGroupIds: 
-        - !Ref VpceSG
-      PolicyDocument:
-        Statement:
-          - 
-            Effect: Allow
-            Principal: "*"
-            Action: "logs:*"
-            Resource: "*"
-  s3gw:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: 
-        Fn::ImportValue: SSMTestVPC-VpcId
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
-      VpcEndpointType: Gateway
-      RouteTableIds:
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1RouteTableId
-        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2RouteTableId
-      PolicyDocument:
-        Statement:
-          - 
-            Effect: Allow
-            Principal: "*"
-            Action: "s3:*"
             Resource: "*"

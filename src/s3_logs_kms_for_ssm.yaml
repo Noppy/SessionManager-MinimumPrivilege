@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Deploy S3 and logs for Session Manager"
+#----------------------------------------------
+Resources:
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "symmetric KMS key for SsmTest"
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: AllowIAMPermissions
+        Statement:
+          - 
+            Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          -
+            Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - "kms:Encrypt*"
+              - "kms:Decrypt*"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:Describe*"
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:SsmTest"
+  KeyAlias:
+    Type: AWS::KMS::Alias
+    Properties: 
+      AliasName: "alias/SsmTest"
+      TargetKeyId: !Ref Key
+  #--
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      KmsKeyId: !GetAtt Key.Arn
+      LogGroupName: SsmTest
+      RetentionInDays: 7
+  #--
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          -
+            BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref KeyAlias
+Outputs:
+  KeyId:
+    Value: !Ref Key
+    Export:
+      Name: !Sub ${AWS::StackName}-KeyId
+  KeyArn:
+    Value: !GetAtt Key.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-KeyArn
+  LogGroupId:
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-LogGroupId
+  LogGroupArn:
+    Value: !GetAtt LogGroup.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-LogGroupArn
+  BucketName:
+    Value: !Ref Bucket
+    Export:
+      Name: !Sub ${AWS::StackName}-BucketName
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-BucketArn

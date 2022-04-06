@@ -34,7 +34,9 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal: "*"
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
             Action: "ssm:*"
             Resource: "*"
   SsmMessagesEndpoint:
@@ -54,7 +56,9 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal: "*"
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
             Action: "ssmmessages:*"
             Resource: "*"
   Ec2MessagesEndpoint:
@@ -74,6 +78,8 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal: "*"
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
             Action: "ec2messages:*"
             Resource: "*"

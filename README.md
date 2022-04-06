@@ -29,9 +29,68 @@ aws --profile ${PROFILE} sts get-caller-identity
 ```
 
 ## (2)環境の準備
-### (2)-(a) VPC作成
+### (2)-(a) SessionManager設定
+#### (i) Session Managerログ出力用LogGroup & S3バケット作成
+暗号用のKMS-CMKと、Session Managerログ出力用のロググループとS3バケットを作成します。
 ```shell
-# ComputeVPC
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation create-stack \
+        --stack-name SSMTestS3Logs \
+        --template-body "file://./src/s3_logs_kms_for_ssm.yaml"
+```
+セッションマネージャの設定をします。この設定はCloudFormation未対応なためCLIで実施します。
+```shell
+#S3バケット名とロググループ名の取得
+BucketName=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name SSMTestS3Logs \
+        --query 'Stacks[].Outputs[?OutputKey==`BucketName`].[OutputValue]')
+LogGroup=$(aws --profile ${PROFILE} --region ${REGION} --output text \
+    cloudformation describe-stacks \
+        --stack-name SSMTestS3Logs \
+        --query 'Stacks[].Outputs[?OutputKey==`LogGroupId`].[OutputValue]')
+echo "
+BucketName = ${BucketName}
+LogGroup   = ${LogGroup}
+"
+
+#定義情報の設定
+SessionManagerRunShellJson='{
+  "schemaVersion": "1.0",
+  "description": "Document to hold regional settings for Session Manager",
+  "sessionType": "Standard_Stream",
+  "inputs": {
+    "s3BucketName": "'"${BucketName}"'",
+    "s3KeyPrefix": "",
+    "s3EncryptionEnabled": true,
+    "cloudWatchLogGroupName": "'"${LogGroup}"'",
+    "cloudWatchEncryptionEnabled": true,
+    "idleSessionTimeout": "60",
+    "maxSessionDuration": "",
+    "cloudWatchStreamingEnabled": true,
+    "kmsKeyId": "",
+    "runAsEnabled": false,
+    "runAsDefaultUser": "",
+    "shellProfile": {
+      "windows": "",
+      "linux": ""
+    }
+  }
+}'
+
+#設定の適用
+aws --profile ${PROFILE} --region ${REGION} \
+  ssm update-document \
+    --name "SSM-SessionManagerRunShell" \
+    --content "${SessionManagerRunShellJson}" \
+    --document-version "\$LATEST"
+
+```
+- 参考情報
+  - [Session Manager 設定の更新 (コマンドライン)](https://docs.aws.amazon.com/ja_jp/systems-manager/latest/userguide/getting-started-configure-preferences-cli.html)
+
+### (2)-(b) VPC作成
+```shell
 aws --profile ${PROFILE} --region ${REGION} \
     cloudformation create-stack \
         --stack-name SSMTestVPC \
@@ -39,7 +98,7 @@ aws --profile ${PROFILE} --region ${REGION} \
         --parameters "file://./src/SSmTestVpc.json" \
         --capabilities CAPABILITY_IAM ;
 ```
-### (2)-(b) VPCエンドポイント作成
+### (2)-(c) VPCエンドポイント作成
 ```shell
 aws --profile ${PROFILE} --region ${REGION} \
     cloudformation create-stack \
@@ -47,7 +106,7 @@ aws --profile ${PROFILE} --region ${REGION} \
         --template-body "file://./src/vpce-allowall.yaml"
 ```
 
-### (2)-(c) インスタンス作成
+### (2)-(d) インスタンス作成
 ```shell
 KEYNAME="CHANGE_KEY_PAIR_NAME"  #環境に合わせてキーペア名を設定してください。
 ```
@@ -80,7 +139,8 @@ aws --profile ${PROFILE} --region ${REGION} \
         --parameters "${CFN_STACK_PARAMETERS}" \
         --capabilities CAPABILITY_IAM ;
 ```
-## (3)ログイン
+## (3)SSHログイン
+- 作業端末からBastionにSSH接続する
 ```shell
 #BastionとSSMインスタンスのIPを確認する
 aws --profile ${PROFILE} --region ${REGION} \
@@ -92,6 +152,7 @@ aws --profile ${PROFILE} --region ${REGION} \
 ssh-add
 ssh -A ec2-user@<上記で確認したBastionのPublic IPアドレス>
 ```
+- BastionからSsmTestインスタンスに接続し、SsmtestのAWS CLIの初期設定をする
 ```shell
 #Bastionサーバ
 ssh <上記で確認したSsmのPrivate IPアドレス>
@@ -101,6 +162,54 @@ REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-
 aws configure set region ${REGION}
 aws configure set output json
 ```
+## (4) SSMのVPCE経由の疎通確認
+Session Managerで接続できることを確認する。
+- 作業端末のブラウザなどからマネコンで、SsmTestに対してSession Manager接続する
+- SSM AgentのモニタリングはSSHした端末で確認。確認は下記ログで行う(要root権限)
+  - `/var/log/amazon/ssm/amazon-ssm-agent.log`
+  - `/var/log/amazon/ssm/errors.log`
+
+## VPCE挙動の確認
+### (1)-(a) ssmだけ
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-ssm_only.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `NG`
+  - 情報収集: `NG`
+  - Session Manager
+    - 接続: `NG`
+    - ログ出力(logs): `NG`
+    - ログ出力(s3): `NG`
+### (1)-(b) ssm/ec2messageだけ
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-ssm_ec2message.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `NG`
+  - 情報収集: `NG`
+  - Session Manager
+    - 接続: `NG`
+    - ログ出力(logs): `NG`
+    - ログ出力(s3): `NG`
+
+
+
+
+    
+
+
+
 
 
 ## セキュリティリスクシナリオの確認
@@ -159,7 +268,7 @@ aws --profile ${UNAUTH_PROFILE} \
         --policy-arn arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess
 
 ```
-#### (1)-(c)ハイブリットアクティベーション作成
+### (2)ハイブリットアクティベーション作成
 ハイブリットアクティベーションを作成し、作成されたアクティベーションのIDとCODEを控えておきます。
 ```shell
 aws --profile ${UNAUTH_PROFILE} --region ${UNAUTH_REGION} \
@@ -173,7 +282,7 @@ aws --profile ${UNAUTH_PROFILE} --region ${UNAUTH_REGION} \
 #    "ActivationCode": "xxxxx"
 # }
 ```
-#### (1)-(d)インスタンスの追加
+### (3)インスタンスの追加
 SsmTestインスタンスのOSにログインし、上記のアクティベーション情報を利用して不正アカウントのSSMにSsmTestインスタンスを登録しいます。
 ```shell
 #以下のコマンドは、SSMTestインスタンスにログインした状態で実行する。
@@ -193,7 +302,38 @@ sudo amazon-ssm-agent -register -code "${CODE}" -id "${ID}" -region "${REGION}"
 #SSMエージェント起動
 sudo systemctl start amazon-ssm-agent
 ```
-#### (1)-(e)不正アカウントでの確認ンスタンスの追加
+### (4)不正アカウントでの確認ンスタンスの追加
 不正アカウントのマネージメントコンソールで以下ができることを確認する。
 - Systems Managerのフリーとマネージャーに該当インスタンスが存在すること
 - セッションマネージャで該当インスタンスにアクセス可能であること
+
+## VPCEポリシーでの防御確認
+### (1)VPCエンドポイントポリシーの更新
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-restrict.yaml"
+```
+### (2)不正アカウントでアクティベーションできるか
+- 不正アカウントのSSMで登録済みのインスタンスを登録解除する
+- SsmTestにSSHログインした状態でアクティベーション登録を行う
+- ```shell
+  sudo systemctl stop amazon-ssm-agent
+  sudo amazon-ssm-agent -register -code "${CODE}" -id "${ID}" -region "${REGION}"
+
+  sudo systemctl start amazon-ssm-agent
+  
+  ```
+- 結果
+  - レジストレーションは通る
+  - しかしSSM Agent起動時に権限不足でエラーとなるため不正アカウントからの利用は実質不可
+  - `/var/log/amazon/ssm/amazon-ssm-agent.log`
+    - ```
+      2022-04-06 07:19:57 INFO [ssm-agent-worker] [StartupProcessor] Write to serial port: OsProductName: Amazon Linux
+      2022-04-06 07:19:57 INFO [ssm-agent-worker] [StartupProcessor] Write to serial port: OsVersion: 2
+      2022-04-06 07:19:57 INFO [ssm-agent-worker] Entering SSM Agent hibernate - AccessDeniedException: User: arn:aws:sts::xxxxxxxxxxxx:assumed-role/SSMActivationServiceRole/mi-05f208d396178669e is not authorized to perform: ssm:UpdateInstanceInformation on resource: arn:aws:ssm:ap-northeast-1:xxxxxxxxxxxx:managed-instance/mi-05f208d396178669e because no VPC endpoint policy allows the ssm:UpdateInstanceInformation action
+        status code: 400, request id: c2bc9a1b-2723-4071-92be-96aa54c24bae
+      ```
+
