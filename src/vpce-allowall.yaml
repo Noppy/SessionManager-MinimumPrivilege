@@ -35,14 +35,7 @@ Resources:
           - 
             Effect: Allow
             Principal: "*"
-            NotAction: "ssm:UpdateInstanceInformation"
-            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:*"
-          -
-            Effect: Allow
-            Principal:
-              AWS:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
-            Action: "ssm:UpdateInstanceInformation"
+            Action: "ssm:*"
             Resource: "*"
   SsmMessagesEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -61,9 +54,7 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal:
-              AWS:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
+            Principal: "*"
             Action: "ssmmessages:*"
             Resource: "*"
   Ec2MessagesEndpoint:
@@ -83,8 +74,6 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal:
-              AWS:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
+            Principal: "*"
             Action: "ec2messages:*"
             Resource: "*"
