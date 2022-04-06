@@ -34,15 +34,10 @@ Resources:
         Statement:
           - 
             Effect: Allow
-            Principal: "*"
-            NotAction: "ssm:UpdateInstanceInformation"
-            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:*"
-          -
-            Effect: Allow
             Principal:
               AWS:
                 - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
-            Action: "ssm:UpdateInstanceInformation"
+            Action: "ssm:*"
             Resource: "*"
   SsmMessagesEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -88,3 +83,51 @@ Resources:
                 - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" 
             Action: "ec2messages:*"
             Resource: "*"
+
+  Logs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"  
+            Action: "logs:*"
+            Resource: "*"
+  s3gw:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1RouteTableId
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2RouteTableId
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              # Session Managerのログ出力(S3)
+              - Fn::ImportValue: SSMTestS3Logs-BucketArn
+              - Fn::Join:
+                - ""
+                - - Fn::ImportValue: SSMTestS3Logs-BucketArn
+                  - "/*"
+              # SSM Agentインストール/更新用(インストールパッケージ格納先)
+              - !Sub "arn:aws:s3:::amazon-ssm-${AWS::Region}/*"

@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy VPCEndpoints(ComputeVPC)
+#----------------------------------------------
+Resources:
+  #------Security Group
+  VpceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: SSMTestVPC-VpceSG
+      GroupDescription: "Allow TLS access from the same VPC"
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      SecurityGroupIngress: 
+        - 
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+  #------VPC Endpoint
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal: "*"
+            Action: "ssm:*"
+            Resource: "*"
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal: "*"
+            Action: "ec2messages:*"
+            Resource: "*"

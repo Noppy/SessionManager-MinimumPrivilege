@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploy Client Instances
+Description: Deploy Instances
 #----------------------------------------------
 Parameters:
   #------------------
@@ -41,6 +41,46 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns: 
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: AllowLogsAction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogGroups"
+                  - "logs:DescribeLogStreams"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+        - PolicyName: AllowS3PutObjectAction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - Fn::Join:
+                    - ""
+                    - - Fn::ImportValue: SSMTestS3Logs-BucketArn
+                      - "/*"
+              -
+                Effect: Allow
+                Action:
+                  - "s3:GetEncryptionConfiguration"
+                Resource:
+                  - Fn::ImportValue: SSMTestS3Logs-BucketArn
+              -
+                Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                  - "kms:GenerateDataKey"
+                Resource:
+                  - Fn::ImportValue: SSMTestS3Logs-KeyArn
   Profile:
     Type: AWS::IAM::InstanceProfile
     Properties: 
