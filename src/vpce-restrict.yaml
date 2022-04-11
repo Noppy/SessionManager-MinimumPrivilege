@@ -119,15 +119,19 @@ Resources:
       PolicyDocument:
         Statement:
           - 
+            Sid: AllowSsmAgentPackageStorageBucket
             Effect: Allow
             Principal: "*"
             Action: "s3:*"
             Resource:
-              # Session Managerのログ出力(S3)
-              - Fn::ImportValue: SSMTestS3Logs-BucketArn
-              - Fn::Join:
-                - ""
-                - - Fn::ImportValue: SSMTestS3Logs-BucketArn
-                  - "/*"
               # SSM Agentインストール/更新用(インストールパッケージ格納先)
               - !Sub "arn:aws:s3:::amazon-ssm-${AWS::Region}/*"
+          - 
+            Sid: AllowOwnedBuckets
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                s3:ResourceAccount: !Sub "${AWS::AccountId}"

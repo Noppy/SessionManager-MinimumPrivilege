@@ -1,7 +1,6 @@
 # SessionManager-MinimumPrivilege
 Systems Manager - Session Managerを利用する場合の最小権限の確認
-
-
+<img src="./Documents/TestConfigurationDiagram.svg"></img>
 
 # 検証手順
 ## (1)事前設定
