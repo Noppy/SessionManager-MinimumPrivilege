@@ -135,3 +135,24 @@ Resources:
             Condition:
               StringEquals:
                 s3:ResourceAccount: !Sub "${AWS::AccountId}"
+  kms:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: 
+        Fn::ImportValue: SSMTestVPC-VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.kms
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet1Id
+        - Fn::ImportValue: SSMTestVPC-PrivateSubnet2Id
+      SecurityGroupIds: 
+        - !Ref VpceSG
+      PolicyDocument:
+        Statement:
+          - 
+            Effect: Allow
+            Principal: "*"
+            Action: "kms:*"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
