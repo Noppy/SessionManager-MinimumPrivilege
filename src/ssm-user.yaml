@@ -1,0 +1,39 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template for creating Initial IAM
+Resources:
+  SsmClientUser:
+    Type: AWS::IAM::User
+    DeletionPolicy: Retain
+    Properties:
+      UserName: "SsmClientUser"
+      Policies: 
+        - 
+          PolicyName: SsmClientPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - 
+                Sid: "AllowSsmReadPermission"
+                Effect: Allow
+                Action:
+                  - ssm:Describe*
+                  - ssm:List*
+                Resource: "*"
+              - 
+                Sid: "AllowStartSession"
+                Effect: Allow
+                Action:
+                  - ssm:StartSession
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*" 
+                  - !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:document/*"
+                  - !Sub "arn:${AWS::Partition}:ssm:*:*:document/AWS*"
+              - 
+                Sid: "AllowTerminateAndResumeSession"
+                Effect: Allow
+                Action:
+                  - ssm:ResumeSession
+                  - ssm:TerminateSession
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:session/*" 

@@ -473,3 +473,103 @@ aws --profile ${PROFILE} --region ${REGION} \
       2022-04-06 07:19:57 INFO [ssm-agent-worker] Entering SSM Agent hibernate - AccessDeniedException: User: arn:aws:sts::xxxxxxxxxxxx:assumed-role/SSMActivationServiceRole/mi-05f208d396178669e is not authorized to perform: ssm:UpdateInstanceInformation on resource: arn:aws:ssm:ap-northeast-1:xxxxxxxxxxxx:managed-instance/mi-05f208d396178669e because no VPC endpoint policy allows the ssm:UpdateInstanceInformation action
         status code: 400, request id: c2bc9a1b-2723-4071-92be-96aa54c24bae
       ```
+
+## (7)クライアント権限の確認
+### (7)-(1)ユーザ追加
+ユーザ追加
+```shell
+aws --profile ${PROFILE} --region ${REGION} \
+  cloudformation create-stack \
+    --stack-name SSMTestIamUser \
+    --template-body "file://./src/ssm-user.yaml" \
+    --capabilities CAPABILITY_NAMED_IAM ;
+```
+ユーザにアクセスキーとシークレットキー生成
+```shell
+aws --profile ${PROFILE} --region ${REGION} \
+  iam create-access-key --user-name "SsmClientUser"
+```
+### (7)-(2) CLIに認証情報を設定
+新しいターミナルを起動し、(7)-(1)で生成したアクセスキーとシークレットキーを環境変数に設定する
+```shell
+export AWS_ACCESS_KEY_ID="(7)-(1)で生成したアクセスキー"
+export AWS_SECRET_ACCESS_KEY="(7)-(1)で生成したシークレットキー"
+export AWS_DEFAULT_REGION="<デプロイ先のリージョン>"
+```
+### (7)-(3) Session Managerテスト
+```shell
+#SSM管理インスタンス一覧を表示
+ aws ssm describe-instance-information \
+  --query 'InstanceInformationList[].{InstanceId:InstanceId,SourceId:SourceId,ComputerName:ComputerName}'
+
+#一覧からセッションマネージャ接続対象を確認して接続
+aws ssm start-session --target "i-xxxxxxx(対象インスタンスのInstanceId)"
+```
+セッションのターミナル
+```shell
+#セッションを作成(バックグラウンドで起動)
+aws ssm start-session --target "i-xxxxxxx(対象インスタンスのInstanceId)" &
+
+#セッション一覧を表示
+aws ssm describe-sessions --state Active
+
+#対象セッションを終了
+aws ssm terminate-session --session-id "セッションID"
+```
+
+## (8) Session ManagerのSSMトンネルテスト
+### (8)-(a) SSH over SSM
+#### (i)クライアントのSSHクライアント設定に書き設定を追加する
+- `~/.ssh/config`
+```shell
+# SSH over Session Manager
+host i-* mi-*
+    ProxyCommand /bin/sh -c "aws --profile プロファイル --region 作成したリージョン ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+```
+#### (ii)SSHコマンドで接続する
+```shell
+ssh i-xxxxxxxxx
+```
+
+### (8)-(b) PortFowarding over SSM
+#### (i)SSMでOSログインして、8080ポートで簡易的なhttpサーバを建てる
+```shell
+sudo -i -u ec2-user
+
+#pythonによる簡易httpサーバスクリプト
+cat > server.py << EOL
+from http.server import HTTPServer, CGIHTTPRequestHandler
+
+class Handler(CGIHTTPRequestHandler):
+    # CGIを設置するディレクトリ
+    cgi_directories = ["/cgi-bin"]
+
+# ポート番号
+PORT = 8080
+
+# IPアドレス
+HOST = "127.0.0.1"
+
+# URLを表示
+print("http://127.0.0.1:8080/")
+
+# サーバの起動
+httpd = HTTPServer((HOST, PORT), Handler)
+httpd.serve_forever()
+EOL
+
+#簡易httpサーバ起動
+python3 server.py
+```
+#### (ii)クライアントで新しいターミナルを起動してSSM接続を行う
+```shell
+aws start-session \
+  --target "i-xxxxxxx(対象インスタンスのInstanceId)" \
+  --document-name "AWS-StartPortForwardingSession" \
+  --parameters '{"portNumber":["8080"], "localPortNumber":["9999"]}'
+```
+
+#### (iii)クライアントで新しいターミナルを起動してhttp接続を確認する
+```shell
+curl http://127.0.0.1:9999/
+````
