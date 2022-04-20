@@ -188,7 +188,25 @@ aws --profile ${PROFILE} --region ${REGION} \
     - ログ出力なし: `NG`
     - ログ出力(logs): `NG`
     - ログ出力(s3): `NG`
-### (4)-(b) VPCEがssm/ec2messageだけ
+
+### (4)-(b) VPCEがssm/ssmmessages
+```shell
+# CloudFormationをデプロイした端末で以下を実行
+aws --profile ${PROFILE} --region ${REGION} \
+    cloudformation update-stack \
+        --stack-name SSMTestVpce \
+        --template-body "file://./src/vpce-ssm_ssmmes.yaml"
+```
+- 挙動
+  - Fleet Manager: `Online`
+  - Run Command: `NG`
+  - 情報収集: `一部機能のみ稼働`
+  - Session Manager
+    - ログ出力なし: `OK`
+    - ログ出力(logs): `NG`
+    - ログ出力(s3): `NG`
+
+### (4)-(c) VPCEがssm/ec2messageだけ
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -204,7 +222,7 @@ aws --profile ${PROFILE} --region ${REGION} \
     - ログ出力なし: `NG`
     - ログ出力(logs): `NG`
     - ログ出力(s3): `NG`
-### (4)-(c) VPCEがssm/ec2message/ssmmessage
+### (4)-(d) VPCEがssm/ec2message/ssmmessage
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -221,7 +239,7 @@ aws --profile ${PROFILE} --region ${REGION} \
     - ログ出力(logs): `NG`
     - ログ出力(s3): `NG`
 
-### (4)-(d) VPCEがssm/ec2message/ssmmessage/logs/s3
+### (4)-(e) VPCEがssm/ec2message/ssmmessage/logs/s3
 ```shell
 # CloudFormationをデプロイした端末で以下を実行
 aws --profile ${PROFILE} --region ${REGION} \
@@ -238,7 +256,7 @@ aws --profile ${PROFILE} --region ${REGION} \
     - ログ出力(logs): `OK`
     - ログ出力(s3): `OK`
 
-### (4)-(e) VPCEがssm/ec2message/ssmmessage/logs/s3 + SSMセッションのKMS暗号化
+### (4)-(f) VPCEがssm/ec2message/ssmmessage/logs/s3 + SSMセッションのKMS暗号化
 #### (i)SSMセッションのKMS暗号化の有効化
 - CloudFormation操作用の端末で以下を実行し設定を変更
 ```shell
@@ -455,4 +473,3 @@ aws --profile ${PROFILE} --region ${REGION} \
       2022-04-06 07:19:57 INFO [ssm-agent-worker] Entering SSM Agent hibernate - AccessDeniedException: User: arn:aws:sts::xxxxxxxxxxxx:assumed-role/SSMActivationServiceRole/mi-05f208d396178669e is not authorized to perform: ssm:UpdateInstanceInformation on resource: arn:aws:ssm:ap-northeast-1:xxxxxxxxxxxx:managed-instance/mi-05f208d396178669e because no VPC endpoint policy allows the ssm:UpdateInstanceInformation action
         status code: 400, request id: c2bc9a1b-2723-4071-92be-96aa54c24bae
       ```
-
